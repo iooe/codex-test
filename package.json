@@ -1,0 +1,16 @@
+{
+  "name": "dice-fold-clone-prototype",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "vite build",
+    "typecheck": "tsc --noEmit",
+    "test": "npm run typecheck && npm run build"
+  },
+  "dependencies": {
+    "typescript": "latest",
+    "vite": "latest"
+  }
+}
