@@ -5,6 +5,7 @@ import './styles.css';
 
 let state: GameState;
 let selectedDieId: string | null = null;
+let draggedDieId: string | null = null;
 
 const traitText: Record<EnemyCard['trait'], string> = {
   none: 'обычный',
@@ -58,7 +59,7 @@ function render(root: HTMLElement): void {
           <div class="title-lockup">
             <p class="eyebrow">Dice Fold Prototype</p>
             <h1>Подземелье складных карт</h1>
-            <p class="subtitle">Бросай физичные d6, бей карты врагов и складывай их прямо на игровом столе.</p>
+            <p class="subtitle">Игровое поле — это 3D стол: карты врагов лежат как настоящая колода, а кубики можно физически бросать мышью в слоты.</p>
           </div>
           <div class="run-stats" aria-label="Состояние героя">
             ${stat('❤ HP', `${state.hero.health}/${state.hero.maxHealth}`)}
@@ -98,15 +99,25 @@ function render(root: HTMLElement): void {
             </article>
           </aside>
 
-          <section class="arena">
+          <section class="arena" aria-label="3D игровой стол">
             <div class="room-banner">
               <span class="tag">${phaseTitle[state.phase]}</span>
               <h2>${room?.title ?? 'Подземелье очищено'}</h2>
             </div>
-            ${renderOutcome()}
-            ${renderEnemies(state.enemies)}
-            ${renderDice()}
-            ${renderRewards()}
+            <div class="physical-table">
+              <div class="table-rim" aria-hidden="true"></div>
+              <div class="felt-surface">
+                <div class="table-depth-lines" aria-hidden="true"></div>
+                <div class="draw-pile" aria-label="Колода карт на столе">
+                  <span></span><span></span><span></span>
+                  <b>колода</b>
+                </div>
+                ${renderOutcome()}
+                ${renderEnemies(state.enemies)}
+                ${renderRewards()}
+                ${renderDice()}
+              </div>
+            </div>
           </section>
 
           <aside class="right-rail">
@@ -148,20 +159,27 @@ function renderEnemies(enemies: EnemyCard[]): string {
   if (state.phase === 'reward' || state.phase === 'victory' || state.phase === 'defeat') return '';
 
   return `
-    <div class="enemy-lane" aria-label="Карты врагов">
+    <div class="enemy-lane" aria-label="Карты врагов, выложенные из колоды на игровой стол">
       ${enemies.map((enemy, index) => `
-        <button class="enemy-card battle-card ${enemy.folded ? 'folded' : ''}" data-enemy-id="${enemy.id}" style="--tilt: ${index % 2 === 0 ? '-2deg' : '2deg'}" ${enemy.folded ? 'disabled' : ''}>
-          <span class="card-glow"></span>
-          <span class="fold-label">${enemy.folded ? 'Сложен' : traitText[enemy.trait]}</span>
-          <div class="enemy-art" aria-hidden="true">${enemyArt[enemy.trait]}</div>
-          <h3>${enemy.name}</h3>
-          <div class="meter hp"><span style="width: ${(enemy.health / enemy.maxHealth) * 100}%"></span></div>
-          <div class="card-stats">
-            <span><b>${enemy.health}</b>/${enemy.maxHealth} HP</span>
-            <span>⚔ ${enemy.attack}</span>
-            <span>🪙 ${enemy.coins}</span>
-          </div>
-          <p>${traitHint[enemy.trait]}</p>
+        <button class="enemy-slot ${enemy.folded ? 'slot-cleared' : ''}" data-enemy-id="${enemy.id}" aria-label="Слот врага ${enemy.name}" ${enemy.folded ? 'disabled' : ''}>
+          <span class="slot-ring"></span>
+          <span class="slot-caption">Брось кубик сюда</span>
+          <span class="enemy-card battle-card playing-card ${enemy.folded ? 'folded' : ''}" style="--tilt: ${index % 2 === 0 ? '-4deg' : '4deg'}; --deal-x: ${(index - 1) * 34}px;">
+            <span class="card-back-pattern" aria-hidden="true"></span>
+            <span class="card-glow"></span>
+            <span class="card-suit">♠</span>
+            <span class="fold-label">${enemy.folded ? 'Сложен' : traitText[enemy.trait]}</span>
+            <span class="enemy-art" aria-hidden="true">${enemyArt[enemy.trait]}</span>
+            <h3>${enemy.name}</h3>
+            <span class="meter hp"><span style="width: ${(enemy.health / enemy.maxHealth) * 100}%"></span></span>
+            <span class="card-stats">
+              <span><b>${enemy.health}</b>/${enemy.maxHealth} HP</span>
+              <span>⚔ ${enemy.attack}</span>
+              <span>🪙 ${enemy.coins}</span>
+            </span>
+            <p>${traitHint[enemy.trait]}</p>
+            <span class="card-suit bottom">♣</span>
+          </span>
         </button>
       `).join('')}
     </div>
@@ -175,9 +193,9 @@ function renderDice(): string {
     <div class="dice-tray game-card">
       <div class="panel-head">
         <div>
-          <span class="tag">Physics dice</span>
-          <h2>Бросок на столе</h2>
-          <p>Выбери кубик, затем карту врага. Наведение поднимает кости как реальные игровые токены.</p>
+          <span class="tag">3D physics dice</span>
+          <h2>Кубики на столе</h2>
+          <p>Зажми кубик мышью, размахнись и отпусти над слотом врага — куб летит как физическая модель. Клик по-прежнему выбирает кубик.</p>
         </div>
         <button class="rune-button" data-action="reroll" ${state.hero.rerolls <= 0 ? 'disabled' : ''}>Переброс (${state.hero.rerolls})</button>
       </div>
@@ -191,8 +209,17 @@ function renderDice(): string {
 function renderDie(die: Die): string {
   const selected = die.id === selectedDieId ? 'selected' : '';
   return `
-    <button class="die ${selected} ${die.used ? 'used' : ''}" data-die-id="${die.id}" style="--roll: ${die.value * 17}deg" aria-label="Кубик ${die.value}" ${die.used ? 'disabled' : ''}>
-      <span class="die-face face-${die.value}">${dicePips(die.value)}</span>
+    <button class="die ${selected} ${die.used ? 'used' : ''}" data-die-id="${die.id}" style="--roll: ${die.value * 17}deg; --spin-x: ${die.value * 31}deg; --spin-y: ${die.value * -43}deg" aria-label="3D кубик ${die.value}" ${die.used ? 'disabled' : ''}>
+      <span class="die-shadow" aria-hidden="true"></span>
+      <span class="die-cube" aria-hidden="true">
+        <span class="cube-face cube-front face-${die.value}">${dicePips(die.value)}</span>
+        <span class="cube-face cube-back face-6">${dicePips(6)}</span>
+        <span class="cube-face cube-right face-3">${dicePips(3)}</span>
+        <span class="cube-face cube-left face-4">${dicePips(4)}</span>
+        <span class="cube-face cube-top face-5">${dicePips(5)}</span>
+        <span class="cube-face cube-bottom face-2">${dicePips(2)}</span>
+      </span>
+      <span class="die-value">${die.value}</span>
       ${die.boosted ? '<small>+1</small>' : ''}
     </button>
   `;
@@ -229,7 +256,9 @@ function renderRewards(): string {
 
 function bind(root: HTMLElement): void {
   root.querySelectorAll<HTMLElement>('[data-die-id]').forEach((button) => {
+    button.addEventListener('pointerdown', (event) => beginDieDrag(event, button, root));
     button.addEventListener('click', () => {
+      if (draggedDieId) return;
       selectedDieId = button.dataset.dieId ?? null;
       render(root);
     });
@@ -237,7 +266,7 @@ function bind(root: HTMLElement): void {
 
   root.querySelectorAll<HTMLElement>('[data-enemy-id]').forEach((button) => {
     button.addEventListener('click', () => {
-      if (!selectedDieId) return;
+      if (!selectedDieId || draggedDieId) return;
       update(root, assignDieToEnemy(state, selectedDieId, button.dataset.enemyId ?? ''));
     });
   });
@@ -253,4 +282,70 @@ function bind(root: HTMLElement): void {
   root.querySelectorAll<HTMLElement>('[data-action="restart"]').forEach((button) => {
     button.addEventListener('click', () => update(root, restart()));
   });
+}
+
+
+function beginDieDrag(event: PointerEvent, dieButton: HTMLElement, root: HTMLElement): void {
+  if (event.button !== 0 || dieButton.hasAttribute('disabled')) return;
+
+  const dieId = dieButton.dataset.dieId;
+  if (!dieId) return;
+
+  draggedDieId = dieId;
+  selectedDieId = dieId;
+  dieButton.setPointerCapture(event.pointerId);
+  dieButton.classList.add('dragging');
+  moveDraggedDie(dieButton, event.clientX, event.clientY);
+
+  const onPointerMove = (moveEvent: PointerEvent) => {
+    moveEvent.preventDefault();
+    moveDraggedDie(dieButton, moveEvent.clientX, moveEvent.clientY);
+    highlightEnemySlot(moveEvent.clientX, moveEvent.clientY, root);
+  };
+
+  const onPointerUp = (upEvent: PointerEvent) => {
+    dieButton.releasePointerCapture(event.pointerId);
+    dieButton.removeEventListener('pointermove', onPointerMove);
+    dieButton.removeEventListener('pointerup', onPointerUp);
+    dieButton.removeEventListener('pointercancel', onPointerUp);
+    const target = findEnemySlot(upEvent.clientX, upEvent.clientY, root);
+    root.querySelectorAll('.enemy-slot.hot-drop').forEach((slot) => slot.classList.remove('hot-drop'));
+    dieButton.classList.remove('dragging');
+    dieButton.style.removeProperty('--drag-x');
+    dieButton.style.removeProperty('--drag-y');
+
+    window.setTimeout(() => {
+      draggedDieId = null;
+    }, 0);
+
+    if (target) {
+      update(root, assignDieToEnemy(state, dieId, target.dataset.enemyId ?? ''));
+      return;
+    }
+
+    render(root);
+  };
+
+  dieButton.addEventListener('pointermove', onPointerMove);
+  dieButton.addEventListener('pointerup', onPointerUp);
+  dieButton.addEventListener('pointercancel', onPointerUp);
+}
+
+function moveDraggedDie(dieButton: HTMLElement, clientX: number, clientY: number): void {
+  dieButton.style.setProperty('--drag-x', `${clientX}px`);
+  dieButton.style.setProperty('--drag-y', `${clientY}px`);
+}
+
+function highlightEnemySlot(clientX: number, clientY: number, root: HTMLElement): void {
+  const target = findEnemySlot(clientX, clientY, root);
+  root.querySelectorAll('.enemy-slot.hot-drop').forEach((slot) => {
+    if (slot !== target) slot.classList.remove('hot-drop');
+  });
+  target?.classList.add('hot-drop');
+}
+
+function findEnemySlot(clientX: number, clientY: number, root: HTMLElement): HTMLElement | null {
+  const elements = document.elementsFromPoint(clientX, clientY);
+  const slot = elements.find((element) => element instanceof HTMLElement && element.matches('[data-enemy-id]:not(:disabled)'));
+  return slot instanceof HTMLElement && root.contains(slot) ? slot : null;
 }
